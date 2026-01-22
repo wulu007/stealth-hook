@@ -1,7 +1,7 @@
 {
-  "name": "stealth-hook",
+  "name": "@wulu007/stealth-hook",
   "type": "module",
-  "version": "0.1",
+  "version": "0.0.1",
   "packageManager": "pnpm@10.26.1",
   "description": "A stealth JavaScript hook library with automatic iframe detection and function toString spoofing.",
   "author": "wulu007",
@@ -30,6 +30,8 @@
   },
   "types": "./dist/index.d.ts",
   "files": [
+    "LICENSE",
+    "README.md",
     "dist"
   ],
   "scripts": {
