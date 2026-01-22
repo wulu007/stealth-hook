@@ -3,8 +3,14 @@
 
 A lightweight JavaScript hook library for intercepting and modifying function behavior in the browser. Designed for stealth modifications with automatic iframe detection and recursive hooking.
 
-[![npm version](https://img.shields.io/npm/v/stealth-hook)](https://www.npmjs.com/package/stealth-hook)
-[![MIT license](https://img.shields.io/npm/l/stealth-hook)](https://github.com/wulu007/StealthHook/blob/main/LICENSE)
+<div align="center">
+
+[![npm version](https://img.shields.io/npm/v/@wulu007/stealth-hook.svg?style=flat-square)](https://www.npmjs.com/package/@wulu007/stealth-hook)
+[![npm downloads](https://img.shields.io/npm/dm/@wulu007/stealth-hook.svg?style=flat-square)](https://www.npmjs.com/package/@wulu007/stealth-hook)
+[![License](https://img.shields.io/npm/l/@wulu007/stealth-hook.svg?style=flat-square)](https://github.com/wulu007/StealthHook/blob/main/LICENSE)
+[![Bundle Size](https://img.shields.io/bundlephobia/minzip/@wulu007/stealth-hook?style=flat-square)](https://bundlephobia.com/package/@wulu007/stealth-hook)
+
+</div>
 
 ## Features
 
