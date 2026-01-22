@@ -1,0 +1,52 @@
+{
+  "name": "stealth-hook",
+  "type": "module",
+  "version": "0.1",
+  "packageManager": "pnpm@10.26.1",
+  "description": "A stealth JavaScript hook library with automatic iframe detection and function toString spoofing.",
+  "author": "wulu007",
+  "license": "MIT",
+  "homepage": "https://github.com/wulu007/stealth-hook",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wulu007/stealth-hook.git"
+  },
+  "keywords": [
+    "hook",
+    "scriptcat",
+    "Tampermonkey",
+    "monkey patch",
+    "stealth"
+  ],
+  "exports": {
+    "import": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "default": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "^7.1.0",
+    "@types/node": "^25.0.9",
+    "eslint": "^9.39.2",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}
