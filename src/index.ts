@@ -6,16 +6,15 @@ declare global {
   interface Window {
     Node: typeof Node
     Function: typeof Function
+    MutationObserver: typeof MutationObserver
+    HTMLIFrameElement: typeof HTMLIFrameElement
+    HTMLElement: typeof HTMLElement
+    Element: typeof Element
   }
 }
 
 export interface HookUtils {
   hookMethod: <T extends object, K extends keyof T>(
-    obj: T,
-    fnName: K,
-    handler: HookHandler<T[K] extends AnyFunction ? T[K] : AnyFunction>,
-  ) => void
-  hookBindThisMethod: <T extends object, K extends keyof T>(
     obj: T,
     fnName: K,
     handler: HookHandler<T[K] extends AnyFunction ? T[K] : AnyFunction>,
@@ -34,17 +33,19 @@ export function hookScope(
   callback: (utils: HookUtils, win: Window) => void,
   rootWindow: Window,
 ) {
-  const interceptorSetupMap = new WeakSet<Window>()
-  const hookedWindows = new WeakMap<Window, string>()
+  const hookedProtoSet = new WeakSet<object>()
+  const interceptorSetupMap = new WeakSet<Node>()
+  const windowIdMap = new WeakMap<Window, string>()
+  const iframeListenerMap = new WeakMap<Node, EventListener>()
   let windowCounter = 0
   const $reflectApply = Reflect.apply
 
   const getWindowId = (win: Window): string => {
-    if (!hookedWindows.has(win)) {
+    if (!windowIdMap.has(win)) {
       const id = win === rootWindow ? 'main' : `iframe-${++windowCounter}`
-      hookedWindows.set(win, id)
+      windowIdMap.set(win, id)
     }
-    return hookedWindows.get(win)!
+    return windowIdMap.get(win)!
   }
 
   const setupToStringHook = (win: Window) => {
@@ -56,63 +57,109 @@ export function hookScope(
     })
   }
 
-  function setupIframeInterceptor(win: Window, applyCallback: (win: Window) => void) {
-    if (interceptorSetupMap.has(win))
+  const handleIframeNode = (
+    node: Node,
+    applyCallback: (win: Window) => void,
+  ) => {
+    const element = node as HTMLIFrameElement | HTMLObjectElement
+    const tryHook = () => {
+      try {
+        const childWin = element.contentWindow
+        if (childWin) {
+          applyCallback(childWin)
+          setupObserver(childWin, childWin.document, applyCallback)
+        }
+      } catch {}
+    }
+
+    tryHook()
+    const oldListener = iframeListenerMap.get(element)
+    if (oldListener)
+      element.removeEventListener('load', oldListener)
+    element.addEventListener('load', tryHook)
+    iframeListenerMap.set(element, tryHook)
+  }
+
+  function setupObserver(
+    win: Window,
+    targetNode: Node,
+    applyCallback: (win: Window) => void,
+  ) {
+    if (interceptorSetupMap.has(targetNode))
       return
-    interceptorSetupMap.add(win)
+    interceptorSetupMap.add(targetNode)
 
     const logger = createLogger(getWindowId(win))
+
     try {
-      const NodeProto = win.Node.prototype
-
-      const hookInsertMethod = (methodName: keyof typeof NodeProto) => {
-        hook.method(NodeProto, methodName, (target, args, thisArg) => {
-          const result = $reflectApply(target, thisArg, args)
-
-          try {
-            const node = args[0] as HTMLElement
-            if (!node || node.tagName !== 'IFRAME')
-              return result
-            const iframe = node as HTMLIFrameElement
-            const handleIframe = () => {
-              const childWin = iframe.contentWindow
-              if (childWin) {
-                applyCallback(childWin)
-                setupIframeInterceptor(childWin, applyCallback)
+      const observer = new win.MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+          if (mutation.type === 'childList') {
+            mutation.addedNodes.forEach((node) => {
+              const tagName = (node as Element).tagName
+              if (tagName === 'IFRAME' || tagName === 'FRAME' || tagName === 'OBJECT') {
+                handleIframeNode(node, applyCallback)
+              } else if (node instanceof win.HTMLElement) {
+                if (node.childElementCount > 0) {
+                  const frames = node.querySelectorAll('iframe, frame, object')
+                  frames.forEach(frame => handleIframeNode(frame, applyCallback))
+                }
               }
+            })
+          } else if (mutation.type === 'attributes') {
+            // 当 src/data 变化时，iframe 可能会重载，需要重新 Hook
+            if (mutation.target instanceof win.Element) {
+              logger.log(`🔄 Detected attribute change on <${mutation.target.tagName}>`, mutation.attributeName)
+              handleIframeNode(mutation.target, applyCallback)
             }
-
-            handleIframe()
-          } catch (e) {
-            logger.warn(`Error in ${String(methodName)} hook:`, e)
           }
+        }
+      })
 
-          return result
+      observer.observe(targetNode, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['src', 'srcdoc', 'data'],
+      })
+    } catch (e) {
+      logger.warn('❌ Failed to setup MutationObserver', e)
+    }
+  }
+
+  const setupShadowDomHook = (win: Window, applyCallback: (win: Window) => void) => {
+    try {
+      // @ts-expect-error Shadow DOM may not be supported
+      if (win.Element.prototype.attachShadow) {
+        hook.method(win.Element.prototype, 'attachShadow', (original, args, scope) => {
+          const shadowRoot = $reflectApply(original, scope, args) as ShadowRoot
+          if (shadowRoot) {
+            setupObserver(win, shadowRoot, applyCallback)
+          }
+          return shadowRoot
         })
       }
-
-      hookInsertMethod('appendChild')
-      hookInsertMethod('insertBefore')
-      hookInsertMethod('replaceChild')
-    } catch (e) {
-      logger.warn('❌ Failed to setup iframe interceptor', e)
-    }
+    } catch { }
   }
 
   // 递归应用逻辑
   const applyToWindow = (win: Window) => {
-    if (hookedWindows.has(win))
+    try {
+      const proto = win.Function.prototype
+      if (hookedProtoSet.has(proto))
+        return
+      hookedProtoSet.add(proto)
+    } catch {
       return
+    }
 
     const logger = createLogger(getWindowId(win))
     setupToStringHook(win)
+    setupShadowDomHook(win, applyToWindow)
 
     const utils: HookUtils = {
       hookMethod: (obj, fnName, handler) => {
         hook.method(obj, fnName, handler as any)
-      },
-      hookBindThisMethod(obj, fnName, handler) {
-        hook.bindThisMethod(obj, fnName, handler as any)
       },
       getNativeFunction: hook.getNativeFunction,
       getNativeString: hook.getNativeString,
@@ -128,5 +175,5 @@ export function hookScope(
   }
 
   applyToWindow(rootWindow)
-  setupIframeInterceptor(rootWindow, applyToWindow)
+  setupObserver(rootWindow, rootWindow.document, applyToWindow)
 }
