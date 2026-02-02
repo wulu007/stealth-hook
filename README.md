@@ -1,4 +1,3 @@
-
 # StealthHook
 
 A lightweight JavaScript hook library for intercepting and modifying function behavior in the browser. Designed for stealth modifications with automatic iframe detection and recursive hooking.
@@ -35,7 +34,7 @@ pnpm add stealth-hook
 ### In Userscripts
 
 ```javascript
-// @require      https://unpkg.com/stealth-hook@latest/dist/index.js
+// @require      https://unpkg.com/@wulu007/stealth-hook@latest/dist/index.global.js
 // @grant        unsafeWindow
 // @run-at       document-start
 ```
@@ -66,7 +65,7 @@ hookScope(({ hookMethod }, win) => {
 // @description  Hook Example
 // @author       You
 // @match        *://*/*
-// @require      https://unpkg.com/stealth-hook@latest/dist/index.js
+// @require      https://unpkg.com/@wulu007/stealth-hook@latest/dist/index.global.js
 // @grant        unsafeWindow
 // @run-at       document-start
 // ==/UserScript==
