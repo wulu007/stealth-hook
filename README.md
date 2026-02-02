@@ -1,7 +1,5 @@
 # StealthHook
 
-A lightweight JavaScript hook library for intercepting and modifying function behavior in the browser. Designed for stealth modifications with automatic iframe detection and recursive hooking.
-
 <div align="center">
 
 [![npm version](https://img.shields.io/npm/v/@wulu007/stealth-hook.svg?style=flat-square)](https://www.npmjs.com/package/@wulu007/stealth-hook)
@@ -10,6 +8,8 @@ A lightweight JavaScript hook library for intercepting and modifying function be
 [![Bundle Size](https://img.shields.io/bundlephobia/minzip/@wulu007/stealth-hook?style=flat-square)](https://bundlephobia.com/package/@wulu007/stealth-hook)
 
 </div>
+
+A lightweight JavaScript hook library for intercepting and modifying function behavior in the browser. Designed for stealth modifications with automatic iframe detection and recursive hooking.
 
 ## Features
 
@@ -22,13 +22,13 @@ A lightweight JavaScript hook library for intercepting and modifying function be
 ### npm
 
 ```bash
-npm install stealth-hook
+npm i @wulu007/stealth-hook
 ```
 
 ### pnpm
 
 ```bash
-pnpm add stealth-hook
+pnpm add @wulu007/stealth-hook
 ```
 
 ### In Userscripts
