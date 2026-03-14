@@ -37,6 +37,10 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "serve": "vite",
+    "build:demo": "vite build",
+    "preview": "vite preview",
+    "dev:demo": "vite",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -49,7 +53,8 @@
     "husky": "^9.1.7",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^8.0.0"
   },
   "publishConfig": {
     "access": "public",

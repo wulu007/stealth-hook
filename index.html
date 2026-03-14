@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stealth Hook Detector (Ultimate)</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        #results {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 1024px) {
+            #results {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        h1 {
+            border-bottom: 1px solid #444;
+            padding-bottom: 10px;
+            color: #9cdcfe;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #0e639c;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #1177bb;
+        }
+
+        .case {
+            margin-bottom: 15px;
+            padding: 12px;
+            background: #252526;
+            border-radius: 4px;
+            border-left: 5px solid #555;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .case.pass {
+            border-left-color: #4caf50;
+        }
+
+        .case.fail {
+            border-left-color: #f44336;
+        }
+
+        .case.warn {
+            border-left-color: #ff9800;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status {
+            font-weight: bold;
+        }
+
+        .pass .status {
+            color: #4caf50;
+        }
+
+        .fail .status {
+            color: #f44336;
+        }
+
+        .warn .status {
+            color: #ff9800;
+        }
+
+        .log {
+            color: #a9a9a9;
+            font-size: 0.9em;
+            margin-top: 8px;
+            white-space: pre-wrap;
+            font-family: Consolas, monospace;
+            background: #1e1e1e;
+            padding: 5px;
+            border-radius: 2px;
+        }
+
+        .log-error {
+            color: #f48771;
+        }
+
+        .log-warn {
+            color: #ffc107;
+        }
+
+        .log-ok {
+            color: #6a9955;
+        }
+
+        select {
+            padding: 10px;
+            font-size: 16px;
+            background: #252526;
+            color: #d4d4d4;
+            border: 1px solid #444;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🕵️ Stealth Hook Detector</h1>
+    <p>Target: <code>Function.prototype.toString</code> | Status: <span id="global-status">Waiting...</span></p>
+
+    <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+        <select id="testSelect">
+            <option value="all">Run All Tests</option>
+            <option value="main">1. Main Window Only</option>
+            <option value="basic">2-4. Basic Methods (appendChild, insertBefore, replaceChild)</option>
+            <option value="dom">5-6. DOM Methods (innerHTML, insertAdjacentHTML)</option>
+            <option value="advanced">7-12. Advanced Methods (write, clone, fragment, shadow, nested, dynamic)</option>
+            <option value="bypass">13-21. Special Cases (Object, Frame, Bypass)</option>
+            <option value="modern">15-19. Modern Methods (multi-level, append, prepend, adjacent, setAttribute)</option>
+        </select>
+        <button id="runSelectedBtn">▶ Run Selected Tests</button>
+        <button id="runAllBtn">▶ Run All Tests</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script type="module">
+        import { hookScope } from './src/index.ts'
+        hookScope(({ hookMethod }, win) => {
+            Reflect.defineProperty(win, '__HOOKED__', { value: true, configurable: false, writable: false })
+        }, window)
+    </script>
+
+    <!-- Load Playground Module via Vite -->
+    <!-- Vite will serve playground/dist/main.js in development -->
+    <!-- Make sure to run: pnpm run build:playground (or pnpm run dev:playground for watch mode) -->
+    <script type="module" src="./playground/main.ts"></script>
+</body>
+
+</html>

@@ -4,5 +4,6 @@ export default antfu({
   rules: {
     'style/brace-style': ['error', '1tbs', { allowSingleLine: true }],
     'no-console': 'off',
+    'no-extend-native': 'off',
   },
 })
