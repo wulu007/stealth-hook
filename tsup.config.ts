@@ -5,5 +5,6 @@ export default defineConfig({
   format: ['esm', 'cjs', 'iife'],
   dts: true,
   clean: true,
+  minify: true,
   globalName: 'StealthHook',
 })
