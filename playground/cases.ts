@@ -1,4 +1,5 @@
 import type { TestCase } from './types'
+import { DetectionError } from './types'
 
 export const testCases: TestCase[] = [
   {
@@ -431,6 +432,139 @@ export const testCases: TestCase[] = [
         return null
       }
       return { contentWindow: window }
+    },
+  },
+]
+
+export const stealthTests: TestCase[] = [
+  {
+    id: 1,
+    label: '检查 toString 伪装 (Native Code)',
+    category: 'basic',
+    creator: () => {
+      const original = window.Audio
+      const toStringStr = original.toString()
+      if (!/^function Audio\(\) \{ \[native code\] \}$/.test(toStringStr)) {
+        throw new DetectionError(`✅ toString 伪装成功防守: ${toStringStr}`, 'detection')
+      }
+    },
+  },
+  {
+    id: 2,
+    label: '检查原型链闭环 (prototype.constructor)',
+    category: 'advanced',
+    creator: () => {
+      const Target = window.Date
+      if (Target.prototype.constructor !== Target) {
+        throw new Error('原型链断裂：constructor 指向不一致')
+      }
+      const desc = Object.getOwnPropertyDescriptor(Target.prototype, 'constructor')
+      if (desc?.enumerable === true) {
+        throw new Error('原型 constructor 不应被枚举')
+      }
+    },
+  },
+  {
+    id: 3,
+    label: '自有属性检测 (hasOwnProperty)',
+    category: 'bypass',
+    creator: () => {
+      // 函数对象本身不应该拥有 constructor 属性（它应该在原型链上）
+      if (Object.prototype.hasOwnProperty.call(window.Audio, 'constructor')) {
+        throw new DetectionError('检测到自有 constructor 属性，潜行失败', 'bypass')
+      }
+      // 常见的混淆器会在这里翻车
+    },
+  },
+  {
+    id: 4,
+    label: '属性描述符精确匹配',
+    category: 'modern',
+    creator: () => {
+      const desc = Object.getOwnPropertyDescriptor(window, 'Audio')
+      if (!desc)
+        throw new DetectionError('找不到描述符', 'detection')
+
+      // 比如：window.Audio 应该是不可枚举的
+      if (desc.enumerable !== false) {
+        throw new DetectionError('enumerable 状态被篡改', 'detection')
+      }
+    },
+  },
+  {
+    id: 5,
+    label: 'new.target 继承链与原型映射检测',
+    category: 'advanced',
+    creator: () => {
+      // 1. 定义一个用于检测的子类（或伪造一个 new.target）
+      function DetectorTarget() {}
+      // 必须建立原型关联，否则原生构造函数（如 Audio）会报错
+      DetectorTarget.prototype = Object.create(window.Audio.prototype)
+      const instance = Reflect.construct(window.Audio, [], DetectorTarget)
+      // 3. 验证原型链
+      const actualProto = Object.getPrototypeOf(instance)
+      if (actualProto !== DetectorTarget.prototype) {
+        if (actualProto === window.Audio.prototype) {
+          throw new DetectionError('检测到 Opaque Hook：new.target 转发丢失，实例原型指向了基类', 'bypass')
+        }
+        throw new DetectionError('new.target 行为异常：实例原型未正确链接', 'detection')
+      }
+
+      // 4. 验证 constructor 完整性
+      // 在 subclassing 场景下，instance.constructor 应当依然能回溯到 window.Audio (即你的 Hook)
+      // 但如果 Hook 没处理好 .prototype.constructor，这里会暴露
+      if (!(instance instanceof window.Audio)) {
+        throw new DetectionError('instanceof 校验失败：Hook 破坏了子类继承关系', 'bypass')
+      }
+    },
+  },
+  {
+    id: 6,
+    label: 'iframe 隔离环境穿透',
+    category: 'dom',
+    creator: async (container) => {
+      const iframe = document.createElement('iframe')
+      container.appendChild(iframe)
+      const childWin = iframe.contentWindow
+      if (!childWin)
+        throw new DetectionError('无法访问 iframe 环境', 'detection')
+      // @ts-expect-error 直接访问子窗口的 Audio 构造函数
+      const isHooked = childWin.Audio.toString().includes('[native code]')
+      if (!isHooked) {
+        throw new DetectionError('iframe 子环境中 Audio 构造函数未被正确防守', 'detection')
+      }
+    },
+  },
+  {
+    id: 7,
+    label: 'Date 构造函数行为深度检测 (new vs call)',
+    category: 'advanced',
+    creator: () => {
+      const Target = window.Date
+      // 1. 检测 new.target 转发：new 调用必须返回对象
+      const instance = new Target()
+      if (typeof instance !== 'object' || !(instance instanceof Target)) {
+        throw new DetectionError('new Target() 未返回正确实例或 instanceof 失效')
+      }
+      // 2. 检测函数调用：不带 new 调用必须返回字符串 (ES 规范)
+      const str = String(new Date())
+      if (typeof str !== 'string') {
+        throw new DetectionError('Target() 作为函数调用时未返回字符串')
+      }
+
+      // 3. 物理原型链检测
+      if (Object.getPrototypeOf(instance) !== Target.prototype) {
+        throw new DetectionError('实例原型链被劫持：getPrototypeOf(instance) !== Target.prototype')
+      }
+
+      // 4. 构造函数属性的不可枚举性 (再次确认)
+      const desc = Object.getOwnPropertyDescriptor(Target.prototype, 'constructor')
+      if (desc?.value !== Target) {
+        throw new DetectionError('闭环断裂：Target.prototype.constructor !== Target')
+      }
+      if (desc?.enumerable === true) {
+        throw new DetectionError('特征泄露：Target.prototype.constructor 变为可枚举')
+      }
     },
   },
 ]

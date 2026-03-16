@@ -1,5 +1,6 @@
 import type { TestCase, TestLog } from './types'
 import { inspectWindow } from './inspector'
+import { DetectionError } from './types'
 import { renderReport } from './ui'
 
 export async function testIframe(testCase: TestCase): Promise<void> {
@@ -34,37 +35,56 @@ export async function testIframe(testCase: TestCase): Promise<void> {
 
         // 🌟 核心防御测试：绝不能让步！
         // 如果结果是普通对象且带有 contentWindow，立刻当场同步断言！
-        if (result && !('then' in result) && result.contentWindow) {
-          resolve(inspectWindow(result.contentWindow))
+        if (result && typeof result === 'object' && !('then' in result) && (result as any).contentWindow) {
+          resolve(inspectWindow((result as any).contentWindow))
           return
         }
 
         // 处理 Promise 或需要等待 load 的情况
         Promise.resolve(result)
           .then((frame) => {
-            if (!frame) {
+            // null 表示不支持或需要跳过
+            if (frame === null) {
               resolve([{ status: 'warn', message: '⚠️ Skipped or not supported' }])
               return
             }
 
-            if (frame.contentWindow) {
-              resolve(inspectWindow(frame.contentWindow))
-            } else {
+            // undefined 表示检测通过（没有检测出问题）- 用于隐身检测
+            if (frame === undefined) {
+              resolve([{ status: 'pass', message: '✅ Detection passed, no issues found' }])
+              return
+            }
+
+            if (typeof frame !== 'object') {
+              resolve([{ status: 'warn', message: '⚠️ Invalid return type' }])
+              return
+            }
+
+            const frameObj = frame as any
+            if (frameObj.contentWindow) {
+              resolve(inspectWindow(frameObj.contentWindow))
+            } else if (typeof frameObj.addEventListener === 'function') {
               // 挂载 onload 事件
-              const check = () => resolve(inspectWindow(frame.contentWindow))
-              if (frame.addEventListener) {
-                frame.addEventListener('load', check, { once: true })
-              } else {
-                frame.onload = check
-              }
+              const check = () => resolve(inspectWindow(frameObj.contentWindow))
+              frameObj.addEventListener('load', check, { once: true })
+            } else {
+              resolve([{ status: 'warn', message: '⚠️ Invalid frame object' }])
             }
           })
           .catch((e: any) => {
-            resolve([{ status: 'fail', message: `❌ Test Error: ${e.message}` }])
+            if (e instanceof DetectionError) {
+              resolve([{ status: 'fail', message: `🚨 ${e.message}` }])
+            } else {
+              resolve([{ status: 'fail', message: `❌ Test Error: ${e.message}` }])
+            }
           })
       } catch (e: any) {
-        // 捕获 creator 阶段抛出的同步错误
-        resolve([{ status: 'fail', message: `❌ Sync Error: ${e.message}` }])
+        // 捕获 creator 阶段抛出的错误
+        if (e instanceof DetectionError) {
+          resolve([{ status: 'fail', message: `🚨 ${e.message}` }])
+        } else {
+          resolve([{ status: 'fail', message: `❌ Sync Error: ${e.message}` }])
+        }
       }
     })
 
