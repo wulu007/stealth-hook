@@ -16,13 +16,45 @@
         }
 
         #results {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+
+        .test-group {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .group-header {
+            font-size: 18px;
+            font-weight: bold;
+            color: #9cdcfe;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #0e639c;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .group-stats {
+            font-size: 12px;
+            color: #a9a9a9;
+            font-weight: normal;
+        }
+
+        .test-cases {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 20px;
+            gap: 10px;
         }
 
         @media (max-width: 1024px) {
-            #results {
+            .test-cases {
                 grid-template-columns: 1fr;
             }
         }
@@ -131,25 +163,18 @@
     <h1>🕵️ Stealth Hook Detector</h1>
     <p>Target: <code>Function.prototype.toString</code> | Status: <span id="global-status">Waiting...</span></p>
 
-    <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-        <select id="testSelect">
-            <option value="all">Run All Tests</option>
-            <option value="main">1. Main Window Only</option>
-            <option value="basic">2-4. Basic Methods (appendChild, insertBefore, replaceChild)</option>
-            <option value="dom">5-6. DOM Methods (innerHTML, insertAdjacentHTML)</option>
-            <option value="advanced">7-12. Advanced Methods (write, clone, fragment, shadow, nested, dynamic)</option>
-            <option value="bypass">13-21. Special Cases (Object, Frame, Bypass)</option>
-            <option value="modern">15-19. Modern Methods (multi-level, append, prepend, adjacent, setAttribute)</option>
-        </select>
-        <button id="runSelectedBtn">▶ Run Selected Tests</button>
-        <button id="runAllBtn">▶ Run All Tests</button>
+    <div style="display: flex; gap: 10px; margin-bottom: 30px; flex-wrap: wrap; justify-content: center;">
+        <button id="runAllBtn" style="padding: 12px 30px; font-size: 18px; font-weight: bold; min-width: 150px;">
+            ▶ 运行全部测试
+        </button>
     </div>
 
     <div id="results"></div>
 
     <script type="module">
         import { hookScope } from './src/index.ts'
-        hookScope(({ hookMethod }, win) => {
+        // 基础 Hook 设置 - 防守层
+        hookScope(({ hook }, win) => {
             Reflect.defineProperty(win, '__HOOKED__', { value: true, configurable: false, writable: false })
         }, window)
     </script>

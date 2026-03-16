@@ -3,7 +3,7 @@ import { inspectWindow } from './inspector'
 import { DetectionError } from './types'
 import { renderReport } from './ui'
 
-export async function testIframe(testCase: TestCase): Promise<void> {
+export async function testIframe(testCase: TestCase, groupKey?: string): Promise<void> {
   // 1. 创建沙箱容器
   const stage = document.createElement('div')
   stage.style.cssText = 'position:absolute; top:-9999px; left:-9999px; width:1px; height:1px; overflow:hidden;'
@@ -89,7 +89,7 @@ export async function testIframe(testCase: TestCase): Promise<void> {
     })
 
     // 3. 拿到最终结果，渲染 UI
-    renderReport(label, logs)
+    renderReport(label, logs, groupKey)
   } finally {
     // 4. 确保沙箱被干净地销毁
     cleanup()
