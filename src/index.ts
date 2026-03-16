@@ -1,13 +1,10 @@
-import type { AnyFunction, HookHandler } from './fake'
+import { getEnv } from './env'
 import { hook } from './hook'
 import { createLogger } from './logger'
+import { setupToStringHook, setupWindowGetterHooks } from './setup'
 
 export interface HookUtils {
-  hookMethod: <T extends object, K extends keyof T>(
-    obj: T,
-    fnName: K,
-    handler: HookHandler<T[K] extends AnyFunction ? T[K] : AnyFunction>,
-  ) => void
+  hook: typeof hook
   getCurrentWindowId: () => string | number
   getNativeFunction: typeof hook.getNativeFunction
   getNativeString: typeof hook.getNativeString
@@ -27,7 +24,7 @@ export function hookScope(
   const windowIdMap = new WeakMap<Window, string>()
   const iframeListenerMap = new WeakMap<Node, EventListener>()
   let windowCounter = 0
-  const $reflectApply = Reflect.apply
+  const env = getEnv()
 
   const getWindowId = (win: Window): string => {
     if (!windowIdMap.has(win)) {
@@ -35,15 +32,6 @@ export function hookScope(
       windowIdMap.set(win, id)
     }
     return windowIdMap.get(win)!
-  }
-
-  const setupToStringHook = (win: Window) => {
-    hook.method(win.Function.prototype, 'toString', (target, args, thisArg) => {
-      const fakeString = hook.getNativeString(thisArg as AnyFunction)
-      if (fakeString)
-        return fakeString
-      return $reflectApply(target, thisArg, args)
-    })
   }
 
   const handleIframeNode = (
@@ -69,101 +57,93 @@ export function hookScope(
     iframeListenerMap.set(element, tryHook)
   }
 
-  const setupWindowGetterHooks = (win: Window, applyCallback: (win: Window) => void) => {
-    // 需要防守的三大载体
-    const targets = [
-      win.HTMLIFrameElement?.prototype,
-      win.HTMLFrameElement?.prototype,
-      win.HTMLObjectElement?.prototype,
-    ].filter(Boolean)
+  const setupSyncDomHooks = (win: Window, applyCallback: (win: Window) => void) => {
+    const {
+      Node,
+      Element,
+      DocumentFragment,
+      HTMLIFrameElement,
+      HTMLFrameElement,
+      HTMLObjectElement,
+    } = win
 
-    const properties = ['contentWindow', 'contentDocument']
-    targets.forEach((proto) => {
-      properties.forEach((prop) => {
-        hook.getter(proto, prop as any, (originalGet, args, thisArg) => {
-          const result = $reflectApply(originalGet, thisArg, args)
-          if (result) {
-            const targetWin = prop === 'contentWindow'
-              ? result
-              : result.defaultView
-            if (targetWin)
-              applyCallback(targetWin)
+    const scanAndHook = (node: any) => {
+      if (!node)
+        return
+
+      // 如果是 frame 类元素，直接处理
+      if (node instanceof HTMLIFrameElement
+        || node instanceof HTMLFrameElement
+        || node instanceof HTMLObjectElement) {
+        try {
+          const childWin = node.contentWindow
+          if (childWin)
+            applyCallback(childWin)
+        } catch {}
+      } else if (node.querySelectorAll) {
+        const frames = node.querySelectorAll('iframe, frame, object')
+        for (let i = 0; i < frames.length; i++) {
+          try {
+            const childWin = (frames[i] as any).contentWindow
+            if (childWin)
+              applyCallback(childWin)
+          } catch {}
+        }
+      }
+    }
+
+    // 2. 拦截 Node 插入方法 (appendChild, insertBefore, replaceChild)
+    const nodeMethods = ['appendChild', 'insertBefore', 'replaceChild'] as const
+    nodeMethods.forEach((method) => {
+      hook.method(Node.prototype, method, (original, args, thisArg) => {
+        const result = env.reflectApply(original, thisArg, args)
+        const newChild = args[0]
+        if (newChild instanceof Node) {
+          scanAndHook(newChild)
+        }
+        return result
+      })
+    })
+
+    // 3. 拦截 Element/DocumentFragment 的批量插入方法 (append, prepend)
+    const batchMethods = ['append', 'prepend'] as const;
+    [Element.prototype, DocumentFragment.prototype].forEach((proto) => {
+      batchMethods.forEach((method) => {
+        if (!proto[method])
+          return
+        hook.method(proto, method, (original, args, thisArg) => {
+          const result = env.reflectApply(original, thisArg, args)
+          // append/prepend 接受多个参数，且可能是字符串
+          for (let i = 0; i < args.length; i++) {
+            if (args[i] instanceof Node) {
+              scanAndHook(args[i])
+            }
           }
           return result
         })
       })
     })
-  }
 
-  const setupSyncDomHooks = (win: Window, applyCallback: (win: Window) => void) => {
-    // 1. 拦截 Node 插入方法
-    const domMethods = ['appendChild', 'insertBefore', 'replaceChild', 'append', 'prepend']
-    domMethods.forEach((method) => {
-      if (win.Node.prototype[method as keyof Node]) {
-        hook.method(win.Node.prototype, method as any, (original, args, thisArg) => {
-          // 先让浏览器执行原生的插入，此时 window[0] 刚刚生成
-          const result = $reflectApply(original, thisArg, args)
-
-          // 🚨 抢在把控制权交还给攻击者之前，立刻找出 iframe 并强行 Hook！
-          const nodes = Array.from(args).flatMap(arg => arg instanceof win.DocumentFragment ? Array.from(arg.childNodes) : [arg])
-          nodes.forEach((node: any) => {
-            if (node.tagName === 'IFRAME' || node.tagName === 'FRAME' || node.tagName === 'OBJECT') {
-              try {
-                // 主动去碰一下 contentWindow，触发 Hook，打上钢印
-                const childWin = node.contentWindow
-                if (childWin)
-                  applyCallback(childWin)
-              } catch {}
-            } else if (node.querySelectorAll) {
-              const frames = node.querySelectorAll('iframe, frame, object')
-              frames.forEach((frame: any) => {
-                try {
-                  const childWin = frame.contentWindow
-                  if (childWin)
-                    applyCallback(childWin)
-                } catch {}
-              })
-            }
-          })
-          return result // 现在交还给攻击者，他们去读 window[0] 时，拿到的已经是带有钢印的了
-        })
-      }
+    // 4. 拦截 innerHTML (Element.prototype)
+    hook.setter(Element.prototype, 'innerHTML', (originalSet, args, thisArg) => {
+      const result = env.reflectApply(originalSet, thisArg, args)
+      scanAndHook(thisArg)
+      return result
     })
 
-    // 2. 拦截 innerHTML 赋值 (防字符串注入)
-    hook.setter(win.Element.prototype, 'innerHTML', (originalSet, args, thisArg) => {
-      $reflectApply(originalSet, thisArg, args)
-      const frames = (thisArg as Element).querySelectorAll('iframe, frame, object')
-      frames.forEach((frame: any) => {
-        try {
-          const childWin = frame.contentWindow
-          if (childWin)
-            applyCallback(childWin)
-        } catch {}
-      })
-    })
-
+    // 5. 拦截 insertAdjacentHTML (精确位置判定)
     // @ts-expect-error 可能不支持 insertAdjacentHTML
-    if (win.Element.prototype.insertAdjacentHTML) {
-      hook.method(
-        win.Element.prototype,
-        'insertAdjacentHTML',
-        (original, args, thisArg) => {
-          $reflectApply(original, thisArg, args)
-          // @ts-expect-error 可能不支持 insertAdjacentHTML
-          const parent = thisArg.parentNode || thisArg
-          if (parent.querySelectorAll) {
-            const frames = parent.querySelectorAll('iframe, frame, object')
-            frames.forEach((frame: any) => {
-              try {
-                const childWin = frame.contentWindow
-                if (childWin)
-                  applyCallback(childWin)
-              } catch {}
-            })
-          }
-        },
-      )
+    if (Element.prototype.insertAdjacentHTML) {
+      hook.method(Element.prototype, 'insertAdjacentHTML', (original, args, thisArg) => {
+        const position = String(args[0]).toLowerCase()
+        const result = env.reflectApply(original, thisArg, args)
+        if (position === 'afterbegin' || position === 'beforeend') {
+          scanAndHook(thisArg)
+        } else if (position === 'beforebegin' || position === 'afterend') {
+          scanAndHook((thisArg as Element).parentNode)
+        }
+        return result
+      })
     }
   }
 
@@ -196,7 +176,7 @@ export function hookScope(
           } else if (mutation.type === 'attributes') {
             // 当 src/data 变化时，iframe 可能会重载，需要重新 Hook
             if (mutation.target instanceof win.Element) {
-              logger.log(`🔄 Detected attribute change on <${mutation.target.tagName}>`, mutation.attributeName)
+              logger.log(`🔄 Detected attribute change on <env.{mutation.target.tagName}>`, mutation.attributeName)
               handleIframeNode(mutation.target, applyCallback)
             }
           }
@@ -219,7 +199,7 @@ export function hookScope(
       // @ts-expect-error Shadow DOM may not be supported
       if (win.Element.prototype.attachShadow) {
         hook.method(win.Element.prototype, 'attachShadow', (original, args, scope) => {
-          const shadowRoot = $reflectApply(original, scope, args) as ShadowRoot
+          const shadowRoot = env.reflectApply(original, scope, args) as ShadowRoot
           if (shadowRoot) {
             setupObserver(win, shadowRoot, applyCallback)
           }
@@ -247,9 +227,7 @@ export function hookScope(
     setupSyncDomHooks(win, applyToWindow)
 
     const utils: HookUtils = {
-      hookMethod: (obj, fnName, handler) => {
-        hook.method(obj, fnName, handler as any)
-      },
+      hook,
       getNativeFunction: hook.getNativeFunction,
       getNativeString: hook.getNativeString,
       getCurrentWindowId: () => getWindowId(win),

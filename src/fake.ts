@@ -1,76 +1,116 @@
-import { getDescriptor } from './descriptor'
+import { getEnv } from './env'
 
-export type AnyFunction = (...args: any[]) => any
+export type AnyFunction = (this: any, ...args: any[]) => any
 
-export interface HookHandler<T extends AnyFunction = AnyFunction> {
-  /**
-   * @param target 原函数
-   * @param args 原函数的参数数组
-   * @param thisArg 当前的 this 上下文 (调用者)
-   */
-  (target: T, args: Parameters<T>, thisArg: ThisType<T>): ReturnType<T>
-}
+export type HookHandler<T extends AnyFunction> = (
+  target: T,
+  /** 严格映射原函数的参数元组 */
+  args: Parameters<T>,
+  /** 严格映射原函数的 this 类型 */
+  thisArg: ThisParameterType<T>,
+) => ReturnType<T>
 
 export const createWrapper = (() => {
-  const $ownKeys = Reflect.ownKeys
-  const $defineProperty = Object.defineProperty
-  const $String_split = String.prototype.split
-  const $Array_slice = Array.prototype.slice
-  const $Array_join = Array.prototype.join
-  const $Error = Error
-  const $reflectApply = Reflect.apply
-  return function (handler: HookHandler, fn: AnyFunction) {
-    const wrapper = {
-      [fn.name](this: any, ...args: any[]) {
+  const env = getEnv()
+  function clearStack(e: Error) {
+    if (e && typeof e.stack === 'string') {
+      try {
+        // 1. 抓取当前干净的调用栈
+        const dStack = new env.Error().stack || ''
+        const eLines = env.split(e.stack, '\n')
+        const dLines = env.split(dStack, '\n')
+        let eIdx = eLines.length - 1
+        let dIdx = dLines.length - 1
+        while (eIdx >= 0 && dIdx >= 0 && eLines[eIdx] === dLines[dIdx]) {
+          eIdx--
+          dIdx--
+        }
+        const callerIndex = eIdx + 2
+        if (callerIndex < eLines.length) {
+          const callerFrames = env.slice(eLines, callerIndex)
+          const isV8 = e.stack.includes('    at ') // 判断是否是 Chrome/Edge
+          if (isV8) {
+            // V8 引擎需要保留原生的 Error Message 头部
+            e.stack = `${e.toString()}\n${env.join(callerFrames, '\n')}`
+          } else {
+            // Firefox/Safari 只有纯调用栈
+            e.stack = env.join(callerFrames, '\n')
+          }
+        }
+      } catch {
+        console.warn('Failed to clear stack trace for stealth hook')
+      }
+    }
+  }
+
+  return function <T extends AnyFunction>(handler: HookHandler<T>, fn: T) {
+    const protoDesc = env.getOwnPropertyDescriptor(fn, 'prototype')
+    const isConstructible = !!protoDesc
+    let wrapper: T
+
+    if (isConstructible) {
+      wrapper = function (this: ThisParameterType<T>, ...args: Parameters<T>): ReturnType<T> {
         try {
-          // 🚀 绝大多数情况走这里，零性能损耗，完美抗住 28 号性能压测
           return handler(fn, args, this)
         } catch (e: any) {
-          if (e && typeof e.stack === 'string') {
-            try {
-              // 1. 抓取当前干净的调用栈
-              const dStack = new $Error().stack || ''
-              const eLines = $reflectApply($String_split, e.stack, ['\n'])
-              const dLines = $reflectApply($String_split, dStack, ['\n'])
-              let eIdx = eLines.length - 1
-              let dIdx = dLines.length - 1
-              while (eIdx >= 0 && dIdx >= 0 && eLines[eIdx] === dLines[dIdx]) {
-                eIdx--
-                dIdx--
-              }
-              const callerIndex = eIdx + 2
-              if (callerIndex < eLines.length) {
-                const callerFrames = $reflectApply($Array_slice, eLines, [callerIndex])
-                const isV8 = e.stack.includes('    at ') // 判断是否是 Chrome/Edge
-                if (isV8) {
-                  // V8 引擎需要保留原生的 Error Message 头部
-                  e.stack = `${e.toString()}\n${$reflectApply($Array_join, callerFrames, ['\n'])}`
-                } else {
-                  // Firefox/Safari 只有纯调用栈
-                  e.stack = $reflectApply($Array_join, callerFrames, ['\n'])
-                }
-              }
-            } catch {
-              // 如果堆栈不可写 (极少数严格模式下)，静默忽略，保证错误正常抛出
-            }
-          }
-          // 3. 将完美缝合、毫无破绽的错误抛给你的 26 号检测器
+          clearStack(e)
           throw e
         }
-      },
-    }[fn.name]!
+      } as unknown as T
+    } else {
+      wrapper = {
+        [fn.name](this: ThisParameterType<T>, ...args: Parameters<T>): ReturnType<T> {
+          try {
+            return handler(fn, args, this)
+          } catch (e: any) {
+            clearStack(e)
+            throw e
+          }
+        },
+      }[fn.name]! as unknown as T
+    }
 
     // copy properties
-    const keys = $ownKeys(fn)
-    for (const key of keys) {
-      if (key === 'arguments' || key === 'caller')
-        continue
-      const desc = getDescriptor(fn, key)
-      if (desc) {
-        $defineProperty(wrapper, key, desc)
+    const descriptors = env.getOwnPropertyDescriptors(fn)
+    const reservedKeys = ['arguments', 'caller', 'prototype', 'length', 'name']
+    for (const key of Object.keys(descriptors)) {
+      if (!reservedKeys.includes(key)) {
+        env.defineProperty(wrapper, key, descriptors[key]!)
       }
     }
 
+    try {
+      if (descriptors.name)
+        env.defineProperty(wrapper, 'name', descriptors.name)
+      if (descriptors.length)
+        env.defineProperty(wrapper, 'length', descriptors.length)
+    } catch {
+      console.warn(`Failed to copy name/length property for ${fn.name}`)
+    }
+
+    if (fn.prototype) {
+      // A. 让 wrapper.prototype 物理指向 fn.prototype
+      // 必须确保这个属性的特性与原生一致（不可枚举）
+      const desc = env.getOwnPropertyDescriptor(fn, 'prototype')!
+      if (desc) {
+        env.defineProperty(wrapper, 'prototype', {
+          ...desc,
+          value: fn.prototype,
+        })
+      } else {
+        console.warn(`Failed to copy prototype property for ${fn.name}`)
+      }
+
+      // B. 修补原型的 constructor 指向
+      // 这样 (new hookedInstance()).constructor === wrapper
+      try {
+        const desc = env.getOwnPropertyDescriptor(fn.prototype, 'constructor')
+        env.defineProperty(wrapper.prototype, 'constructor', {
+          ...desc,
+          value: wrapper,
+        })
+      } catch { }
+    }
     return wrapper
   }
 })()
